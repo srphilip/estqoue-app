@@ -1,0 +1,14 @@
+{% extends 'base.html' %}
+{% block content %}
+<h3>Relatórios de Movimentação</h3>
+<table class="table table-striped">
+<thead><tr><th>ID</th><th>Produto</th><th>Tipo</th><th>Qtd</th><th>Data</th></tr></thead>
+<tbody>
+{% for m in dados %}
+<tr>
+    <td>{{m[0]}}</td><td>{{m[1]}}</td><td>{{m[2]}}</td><td>{{m[3]}}</td><td>{{m[4]}}</td>
+</tr>
+{% endfor %}
+</tbody>
+</table>
+{% endblock %}

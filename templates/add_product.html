@@ -1,0 +1,12 @@
+{% extends 'base.html' %}
+{% block content %}
+<h3>Novo Produto</h3>
+<form method="POST">
+    <input class="form-control mb-2" name="nome" placeholder="Nome do produto" required>
+    <input class="form-control mb-2" name="categoria" placeholder="Categoria" required>
+    <input class="form-control mb-2" name="unidade" placeholder="Unidade (ex: litro, kg)" required>
+    <input class="form-control mb-2" name="fornecedor" placeholder="Fornecedor">
+    <input class="form-control mb-2" type="number" name="quantidade" placeholder="Quantidade inicial" required>
+    <button class="btn btn-success">Cadastrar</button>
+</form>
+{% endblock %}

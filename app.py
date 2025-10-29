@@ -23,7 +23,7 @@ DB_USER = os.environ.get("DB_USER", "postgres")
 DB_PASS = os.environ.get("DB_PASS", "sua_senha_secreta_local") 
 DB_PORT = os.environ.get("DB_PORT", "5432")
 
-app = Flask(__name__, template_folder='.') 
+app = Flask(__name__)
 
 
 # --- Funções de Banco de Dados ---

@@ -1,0 +1,41 @@
+{% extends 'base.html' %}
+{% block title %}Amostragem de Inventário{% endblock %}
+{% block content %}
+    <h1 class="mb-4">🔍 Amostra de Inventário Cíclico</h1>
+    <div class="alert alert-info" role="alert">
+        <strong>{{ mensagem }}</strong>
+    </div>
+    {% if amostra_produtos %}
+        <p>Use a tabela abaixo para realizar a contagem física dos itens selecionados.</p>
+        <div class="table-responsive">
+            <table class="table table-bordered table-striped">
+                <thead class="table-warning">
+                    <tr>
+                        <th>ID</th>
+                        <th>CÓDIGO</th>
+                        <th>Nome do Produto</th>
+                        <th>Categoria</th>
+                        <th>Estoque no Sistema</th>
+                        <th class="bg-danger text-white">CONTAGEM REAL (Anotar)</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for produto in amostra_produtos %}
+                    <tr>
+                        <td>{{ produto['id'] }}</td>
+                        <td><span class="badge bg-danger">{{ produto['codigo'] }}</span></td>
+                        <td>{{ produto['nome'] }}</td>
+                        <td>{{ produto['categoria'] }}</td>
+                        <td>{{ produto['quantidade'] }}</td>
+                        <td></td> 
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% else %}
+        <div class="alert alert-warning" role="alert">
+            Não há produtos suficientes para gerar uma amostra válida.
+        </div>
+    {% endif %}
+{% endblock %}

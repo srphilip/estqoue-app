@@ -1,0 +1,46 @@
+{% extends 'base.html' %}
+{% block title %}Ajustar Estoque{% endblock %}
+{% block content %}
+    <h1 class="mb-4">🛠️ Ajuste de Estoque, Correção e Exclusão</h1>
+    
+    {% if mensagem %}
+        <div class="alert alert-{{ mensagem[0] }}" role="alert">
+            {{ mensagem[1] }}
+        </div>
+    {% endif %}
+
+    <div class="card p-4 mb-4">
+        <h5 class="card-title">Ajustar Quantidade (Correção de Inventário)</h5>
+        <p class="card-text text-info">Use para forçar o estoque a um número específico (Ex: após contagem física).</p>
+        <form method="post">
+            <div class="mb-3">
+                <label for="codigo" class="form-label">Código do Produto (Ex: P001):</label>
+                <input type="text" id="codigo" name="codigo" class="form-control" placeholder="Digite o código Pxxx" required>
+            </div>
+            <div class="mb-3">
+                <label for="nova_quantidade" class="form-label">**NOVA Quantidade Total no Estoque**:</label>
+                <input type="number" id="nova_quantidade" name="nova_quantidade" class="form-control" required min="0" placeholder="Insira a quantidade correta contada fisicamente">
+                <div class="form-text">Isto sobrescreverá a quantidade atual no sistema.</div>
+            </div>
+            <button type="submit" class="btn btn-warning mt-3">Registrar Ajuste</button>
+        </form>
+    </div>
+    
+    <div class="card mt-5 border-danger">
+        <div class="card-header bg-danger text-white">
+            <h5>⛔ Excluir Produto Permanentemente</h5>
+        </div>
+        <div class="card-body">
+            <p class="card-text text-danger">Atenção: Esta ação é irreversível e removerá o produto do banco de dados.</p>
+            <form method="post" action="{{ url_for('atualizar_estoque') }}">
+                <div class="mb-3">
+                    <label for="codigo_excluir" class="form-label">Código do Produto (Exclusão)</label>
+                    <input type="text" class="form-control" id="codigo_excluir" name="codigo" placeholder="Ex: P001" required>
+                </div>
+                <button type="submit" name="btn_excluir" class="btn btn-danger" onclick="return confirm('Tem certeza que deseja EXCLUIR este produto? Essa ação não pode ser desfeita.');">
+                    <i class="bi bi-trash"></i> Excluir Produto
+                </button>
+            </form>
+        </div>
+    </div>
+{% endblock %}

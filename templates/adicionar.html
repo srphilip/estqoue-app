@@ -13,10 +13,24 @@
                 <label for="nome" class="form-label">Nome do Produto:</label>
                 <input type="text" id="nome" name="nome" class="form-control" required>
             </div>
-
             <div class="mb-3">
                 <label for="categoria" class="form-label">Categoria:</label>
                 <input type="text" id="categoria" name="categoria" class="form-control" required>
+            </div>
+            
+            <div class="row">
+                <div class="col-md-4 mb-3">
+                    <label for="unidade_medida" class="form-label">Unidade de Medida (Ex: UN, KG, MT):</label>
+                    <input type="text" id="unidade_medida" name="unidade_medida" class="form-control" required>
+                </div>
+                <div class="col-md-4 mb-3">
+                    <label for="marca" class="form-label">Marca:</label>
+                    <input type="text" id="marca" name="marca" class="form-control" required>
+                </div>
+                <div class="col-md-4 mb-3">
+                    <label for="fornecedor" class="form-label">Fornecedor:</label>
+                    <input type="text" id="fornecedor" name="fornecedor" class="form-control" required>
+                </div>
             </div>
             
             <div class="row">
@@ -24,7 +38,6 @@
                     <label for="quantidade" class="form-label">Quantidade Inicial:</label>
                     <input type="number" id="quantidade" name="quantidade" class="form-control" required min="0">
                 </div>
-                
                 <div class="col-md-6 mb-3">
                     <label for="valor" class="form-label">Valor Unitário (R$):</label>
                     <input type="number" id="valor" name="valor" class="form-control" required step="0.01" min="0">

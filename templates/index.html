@@ -12,6 +12,9 @@
                         <th>CÓDIGO</th>
                         <th>Nome do Produto</th>
                         <th>Categoria</th>
+                        <th>Unid. Medida</th>
+                        <th>Marca</th>
+                        <th>Fornecedor</th>
                         <th>Quantidade</th>
                         <th>Valor Unitário (R$)</th>
                         <th>Data Cadastro</th>
@@ -24,6 +27,9 @@
                         <td><span class="badge bg-danger">{{ produto['codigo'] }}</span></td>
                         <td>{{ produto['nome'] }}</td>
                         <td><span class="badge bg-secondary">{{ produto['categoria'] }}</span></td>
+                        <td>{{ produto['unidade_medida'] }}</td>
+                        <td>{{ produto['marca'] }}</td>
+                        <td>{{ produto['fornecedor'] }}</td>
                         <td><span class="badge bg-primary">{{ produto['quantidade'] }}</span></td>
                         <td>R$ {{ "%.2f"|format(produto['valor_unitario']) }}</td>
                         <td>{{ produto['data_cadastro'] }}</td>

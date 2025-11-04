@@ -1,0 +1,52 @@
+{% extends 'base.html' %}
+{% block title %}Relatórios Gráficos{% endblock %}
+
+{% block content %}
+    <h1 class="mb-4">📈 Relatórios e Visualização de Dados</h1>
+    <hr>
+    
+    {% if mensagem %}
+        <div class="alert alert-warning" role="alert">{{ mensagem }}</div>
+    {% else %}
+        
+        <div class="row">
+            <div class="col-md-6 mb-4">
+                <div class="card shadow">
+                    <div class="card-body">
+                        {% if grafico1 %}
+                            <img src="data:image/png;base64,{{ grafico1 }}" class="img-fluid" alt="Gráfico de Estoque por Categoria">
+                        {% else %}
+                            <p class="text-center text-muted">Sem dados suficientes para este gráfico.</p>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-6 mb-4">
+                <div class="card shadow">
+                    <div class="card-body">
+                        {% if grafico2 %}
+                            <img src="data:image/png;base64,{{ grafico2 }}" class="img-fluid" alt="Top 10 Produtos por Valor Total">
+                        {% else %}
+                            <p class="text-center text-muted">Sem dados suficientes para este gráfico.</p>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            
+            <div class="col-md-6 mb-4">
+                <div class="card shadow">
+                    <div class="card-body">
+                        {% if grafico3 %}
+                            <img src="data:image/png;base64,{{ grafico3 }}" class="img-fluid" alt="Proporção de Itens por Categoria">
+                        {% else %}
+                            <p class="text-center text-muted">Sem dados suficientes para este gráfico.</p>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            
+        </div>
+        
+    {% endif %}
+{% endblock %}

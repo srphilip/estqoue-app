@@ -1,64 +1,60 @@
-# app.py (Código final para Render.com com PostgreSQL)
+# app.py (Código Final para Execução Local com SQLite)
 
 from flask import Flask, render_template, request, redirect, url_for
 import pandas as pd
 from datetime import datetime
 import os
 import random
-import psycopg2 
-from psycopg2 import extras 
+import sqlite3 
+import io
+import base64
 
-# --- VARIÁVEIS DE CONEXÃO POSTGRES ---
-# O Render fornece a URL completa via variável de ambiente 'DATABASE_URL'
-DATABASE_URL = os.environ.get("DATABASE_URL")
+# Importar bibliotecas de visualização
+import matplotlib
+matplotlib.use('Agg') # Necessário para rodar Matplotlib em ambientes sem GUI
+import matplotlib.pyplot as plt
+import seaborn as sns
 
-if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
-    # Corrigir o formato da URL para a biblioteca psycopg2
-    DATABASE_URL = "postgresql://" + DATABASE_URL[len("postgres://"):]
-
-# Variáveis locais de fallback (apenas para testar no seu PC antes do deploy)
-DB_HOST = os.environ.get("DB_HOST", "localhost")
-DB_NAME = os.environ.get("DB_NAME", "estoque_db") 
-DB_USER = os.environ.get("DB_USER", "postgres")
-DB_PASS = os.environ.get("DB_PASS", "sua_senha_secreta_local") 
-DB_PORT = os.environ.get("DB_PORT", "5432")
-
-app = Flask(__name__)
-
+# --- CONFIGURAÇÃO DE BANCO DE DADOS LOCAL ---
+# O arquivo database.db será criado nesta mesma pasta
+DB_NAME = 'database.db' 
+app = Flask(__name__) 
 
 # --- Funções de Banco de Dados ---
 
 def get_db_connection():
-    """Conecta ao banco de dados PostgreSQL."""
-    try:
-        if DATABASE_URL:
-            conn = psycopg2.connect(DATABASE_URL)
-        else:
-            # Conexão local para testes
-            conn = psycopg2.connect(host=DB_HOST, database=DB_NAME, user=DB_USER, password=DB_PASS, port=DB_PORT)
-        return conn
-    except Exception as e:
-        print(f"ERRO DE CONEXÃO AO POSTGRES: {e}")
-        raise ConnectionError("Falha na conexão com o banco de dados PostgreSQL.")
+    """Conecta ao banco de dados SQLite."""
+    conn = sqlite3.connect(DB_NAME)
+    # Define o row_factory para acessar colunas por nome (como um dicionário)
+    conn.row_factory = sqlite3.Row
+    return conn
 
 def executar_query(query, params=None, fetch_mode='none'):
-    """Função centralizada para executar comandos e queries no PG."""
+    """Função centralizada para executar comandos e queries no SQLite."""
     conn = None
     resultado = None
     try:
         conn = get_db_connection()
-        # Usamos DictCursor para que os resultados venham como dicionários (fácil para Flask e Pandas)
-        cur = conn.cursor(cursor_factory=extras.DictCursor)
-        cur.execute(query, params)
+        cur = conn.cursor()
+        if params:
+            cur.execute(query, params)
+        else:
+            cur.execute(query)
         
         if fetch_mode == 'one':
             resultado = cur.fetchone()
         elif fetch_mode == 'all':
-            # Converte os resultados do cursor para lista de dicionários padrão
-            resultado = [dict(row) for row in cur.fetchall()]
+            resultado = cur.fetchall()
         
         conn.commit()
         cur.close()
+        
+        # Converte sqlite3.Row para dicionário padrão para uso consistente
+        if fetch_mode == 'all' and resultado:
+            resultado = [dict(row) for row in resultado]
+        if fetch_mode == 'one' and resultado:
+            resultado = dict(resultado)
+            
         return resultado
     
     except Exception as e:
@@ -71,27 +67,30 @@ def executar_query(query, params=None, fetch_mode='none'):
             conn.close()
 
 def gerar_proximo_codigo():
-    """Busca o ID máximo para gerar o próximo código (P001, P002...)."""
+    """Gera o próximo código sequencial (P001, P002...) no SQLite."""
     query = 'SELECT MAX(id) FROM produtos'
     resultado = executar_query(query, fetch_mode='one') 
     
-    last_id = resultado[0] if resultado and resultado[0] is not None else 0 
+    last_id = resultado['MAX(id)'] if resultado and resultado['MAX(id)'] is not None else 0 
     
     next_id = last_id + 1
     return f'P{next_id:03d}' 
 
 def create_table():
-    """Cria as tabelas de produtos e movimentações no PostgreSQL."""
-    # Tabela PRODUTOS (com SERIAL PRIMARY KEY e VARCHAR)
+    """Cria as tabelas de produtos e movimentações no SQLite."""
+    # Tabela PRODUTOS (com os novos campos)
     query_produtos = '''
         CREATE TABLE IF NOT EXISTS produtos (
-            id SERIAL PRIMARY KEY,
-            codigo VARCHAR(10) UNIQUE NOT NULL,  
-            nome VARCHAR(255) NOT NULL,
-            categoria VARCHAR(100),
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            codigo TEXT UNIQUE NOT NULL,  
+            nome TEXT NOT NULL,
+            categoria TEXT,
+            unidade_medida TEXT, 
+            marca TEXT,          
+            fornecedor TEXT,     
             quantidade INTEGER NOT NULL,
-            valor_unitario NUMERIC(10, 2),
-            data_cadastro VARCHAR(50)
+            valor_unitario REAL,
+            data_cadastro TEXT
         );
     '''
     executar_query(query_produtos)
@@ -99,20 +98,59 @@ def create_table():
     # Tabela MOVIMENTACOES (para auditoria)
     query_movimentacoes = '''
         CREATE TABLE IF NOT EXISTS movimentacoes (
-            id SERIAL PRIMARY KEY,
-            produto_id INTEGER REFERENCES produtos(id), 
-            tipo VARCHAR(50) NOT NULL, -- ENTRADA, SAIDA, AJUSTE_ENTRADA, AJUSTE_SAIDA
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            produto_id INTEGER, 
+            tipo TEXT NOT NULL, 
             quantidade INTEGER NOT NULL,
-            data_movimentacao VARCHAR(50)
+            data_movimentacao TEXT,
+            FOREIGN KEY (produto_id) REFERENCES produtos(id)
         );
     '''
     executar_query(query_movimentacoes)
 
-# Tenta criar a tabela na inicialização (Render.com)
-try:
-    create_table()
-except ConnectionError:
-    print("Aguardando credenciais de conexão do PostgreSQL...")
+# Inicializa o banco de dados e as tabelas
+create_table()
+
+
+# --- Funções de Gráficos ---
+
+def gerar_grafico(df, tipo, titulo, xlabel="", ylabel=""):
+    """Gera um gráfico do tipo Barra, Rosca ou dispersão."""
+    plt.figure(figsize=(10, 6))
+    
+    if df.empty:
+        return None
+        
+    if tipo == 'barra_qtd_categoria':
+        # Gráfico de barras da quantidade total por categoria
+        data = df.groupby('categoria')['quantidade'].sum().sort_values(ascending=False)
+        sns.barplot(x=data.index, y=data.values, palette='viridis')
+        plt.xticks(rotation=45, ha='right')
+    
+    elif tipo == 'barra_produtos_valor':
+        # Top 10 produtos por valor total (quantidade * valor_unitario)
+        df['valor_total'] = df['quantidade'] * df['valor_unitario']
+        data = df.nlargest(10, 'valor_total')
+        sns.barplot(x='nome', y='valor_total', data=data, palette='magma')
+        plt.xticks(rotation=45, ha='right')
+        
+    elif tipo == 'rosca_categorias':
+        # Gráfico de rosca para proporção de produtos (COUNT) por categoria
+        data = df['categoria'].value_counts()
+        plt.pie(data, labels=data.index, autopct='%1.1f%%', startangle=90, wedgeprops=dict(width=0.4), pctdistance=0.75)
+        plt.title(titulo, y=1.08)
+        plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+
+    plt.title(titulo)
+    plt.xlabel(xlabel)
+    plt.ylabel(ylabel)
+    plt.grid(axis='y', linestyle='--')
+    
+    buf = io.BytesIO()
+    plt.savefig(buf, format='png')
+    plt.close() 
+    
+    return base64.b64encode(buf.getvalue()).decode('utf-8')
 
 
 # --- Rotas da Aplicação ---
@@ -123,11 +161,45 @@ def index():
     produtos = executar_query(query, fetch_mode='all')
     return render_template('index.html', produtos=produtos)
 
+@app.route('/graficos')
+def graficos():
+    query = 'SELECT nome, categoria, quantidade, valor_unitario FROM produtos WHERE quantidade > 0'
+    produtos = executar_query(query, fetch_mode='all')
+    
+    if not produtos:
+        return render_template('graficos.html', mensagem="Estoque vazio. Adicione produtos para gerar relatórios.")
+        
+    df = pd.DataFrame(produtos)
+    
+    grafico1 = gerar_grafico(df, 
+        tipo='barra_qtd_categoria', 
+        titulo='Estoque Total por Categoria (Unidades)', 
+        xlabel='Categoria', 
+        ylabel='Soma das Unidades em Estoque'
+    )
+    
+    grafico2 = gerar_grafico(df, 
+        tipo='barra_produtos_valor', 
+        titulo='Top 10 Produtos por Valor Total (R$)', 
+        xlabel='Produto', 
+        ylabel='Valor Total no Estoque (R$)'
+    )
+    
+    grafico3 = gerar_grafico(df, 
+        tipo='rosca_categorias', 
+        titulo='Proporção de Itens por Categoria (Contagem)'
+    )
+    
+    return render_template('graficos.html', grafico1=grafico1, grafico2=grafico2, grafico3=grafico3)
+
 @app.route('/adicionar', methods=('GET', 'POST'))
 def adicionar_produto():
     if request.method == 'POST':
         nome = request.form['nome']
         categoria = request.form['categoria']
+        unidade_medida = request.form['unidade_medida'] 
+        marca = request.form['marca']                   
+        fornecedor = request.form['fornecedor']         
         
         try:
             quantidade = int(request.form['quantidade'])
@@ -138,29 +210,30 @@ def adicionar_produto():
         codigo = gerar_proximo_codigo()
         data_cadastro = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         
-        # Conexão manual para garantir o ID retornado e registrar as duas ações em sequência
         conn = None
         try:
+            # Usamos a conexão manual para obter o 'lastrowid' (SQLite)
             conn = get_db_connection()
             cur = conn.cursor()
 
-            # 1. Inserir produto e obter o ID (PostgreSQL RETURNING ID)
-            query_insert_produto = "INSERT INTO produtos (codigo, nome, categoria, quantidade, valor_unitario, data_cadastro) VALUES (%s, %s, %s, %s, %s, %s) RETURNING id"
-            params_insert_produto = (codigo, nome, categoria, quantidade, valor, data_cadastro)
-            cur.execute(query_insert_produto, params_insert_produto)
-            produto_id = cur.fetchone()[0]
+            query_insert_produto = "INSERT INTO produtos (codigo, nome, categoria, unidade_medida, marca, fornecedor, quantidade, valor_unitario, data_cadastro) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            params_insert_produto = (codigo, nome, categoria, unidade_medida, marca, fornecedor, quantidade, valor, data_cadastro) 
             
-            # 2. Registrar MOVIMENTACAO de ENTRADA (Cadastro Inicial)
-            query_insert_mov = "INSERT INTO movimentacoes (produto_id, tipo, quantidade, data_movimentacao) VALUES (%s, %s, %s, %s)"
+            cur.execute(query_insert_produto, params_insert_produto)
+            produto_id = cur.lastrowid # SQLite retorna o ID assim
+            
+            # 2. Registrar MOVIMENTACAO de ENTRADA 
+            query_insert_mov = "INSERT INTO movimentacoes (produto_id, tipo, quantidade, data_movimentacao) VALUES (?, ?, ?, ?)"
             params_insert_mov = (produto_id, 'ENTRADA', quantidade, data_cadastro)
             cur.execute(query_insert_mov, params_insert_mov)
 
             conn.commit()
+            cur.close()
 
         except Exception as e:
             if conn: conn.rollback()
             print(f"Erro no cadastro e movimento: {e}")
-            return render_template('adicionar.html', mensagem=("danger", "Erro: Falha ao cadastrar o produto e a movimentação.")), 500
+            return render_template('adicionar.html', mensagem=("danger", "Falha ao cadastrar o produto e a movimentação.")), 500
         finally:
             if conn: conn.close()
 
@@ -179,7 +252,8 @@ def retirada():
             mensagem = ("danger", "Erro: A quantidade deve ser um número inteiro.")
             return render_template('retirada.html', mensagem=mensagem)
 
-        query_select = 'SELECT id, quantidade, nome FROM produtos WHERE codigo = %s'
+        # Usamos '?' para placeholders no SQLite
+        query_select = 'SELECT id, quantidade, nome FROM produtos WHERE codigo = ?'
         produto = executar_query(query_select, (codigo,), fetch_mode='one')
 
         if produto is None:
@@ -192,13 +266,13 @@ def retirada():
             nova_quantidade = produto['quantidade'] - quantidade_retirada
             data_movimentacao = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
-            # 1. Update PRODUTOS quantity
-            query_update_produto = 'UPDATE produtos SET quantidade = %s WHERE codigo = %s'
+            # 1. Update PRODUTOS
+            query_update_produto = 'UPDATE produtos SET quantidade = ? WHERE codigo = ?'
             params_update = (nova_quantidade, codigo)
             executar_query(query_update_produto, params_update)
 
-            # 2. Insert record into MOVIMENTACOES table
-            query_insert_mov = "INSERT INTO movimentacoes (produto_id, tipo, quantidade, data_movimentacao) VALUES (%s, %s, %s, %s)"
+            # 2. Insert MOVIMENTACOES
+            query_insert_mov = "INSERT INTO movimentacoes (produto_id, tipo, quantidade, data_movimentacao) VALUES (?, ?, ?, ?)"
             params_insert = (produto['id'], 'SAIDA', quantidade_retirada, data_movimentacao) 
             executar_query(query_insert_mov, params_insert)
             
@@ -218,18 +292,18 @@ def atualizar_estoque():
             if not codigo:
                 mensagem = ("danger", "Erro: O código do produto é obrigatório para a exclusão.")
             else:
-                query_select = 'SELECT id, nome FROM produtos WHERE codigo = %s'
+                query_select = 'SELECT id, nome FROM produtos WHERE codigo = ?'
                 produto = executar_query(query_select, (codigo,), fetch_mode='one')
                 
                 if produto is None:
                     mensagem = ("danger", f"Erro: Produto com código '{codigo}' não encontrado para exclusão.")
                 else:
                     # 1. Remover MOVIMENTACOES (Regras de FOREIGN KEY)
-                    query_delete_mov = 'DELETE FROM movimentacoes WHERE produto_id = %s'
+                    query_delete_mov = 'DELETE FROM movimentacoes WHERE produto_id = ?'
                     executar_query(query_delete_mov, (produto['id'],))
                     
                     # 2. Remover PRODUTO
-                    query_delete_prod = 'DELETE FROM produtos WHERE codigo = %s'
+                    query_delete_prod = 'DELETE FROM produtos WHERE codigo = ?'
                     executar_query(query_delete_prod, (codigo,))
                     
                     mensagem = ("success", f"Sucesso! O produto '{produto['nome']}' (Código: {codigo}) foi EXCLUÍDO permanentemente do estoque e seu histórico removido.")
@@ -243,7 +317,7 @@ def atualizar_estoque():
             mensagem = ("danger", "Erro: A nova quantidade deve ser um número inteiro.")
             return render_template('atualizar.html', mensagem=mensagem)
 
-        query_select = 'SELECT id, quantidade, nome FROM produtos WHERE codigo = %s'
+        query_select = 'SELECT id, quantidade, nome FROM produtos WHERE codigo = ?'
         produto = executar_query(query_select, (codigo,), fetch_mode='one')
         
         if produto is None:
@@ -254,16 +328,16 @@ def atualizar_estoque():
             diferenca = nova_quantidade - produto['quantidade']
             
             if diferenca != 0:
-                # 1. Update PRODUTOS quantity
-                query_update_produto = 'UPDATE produtos SET quantidade = %s WHERE codigo = %s'
+                # 1. Update PRODUTOS
+                query_update_produto = 'UPDATE produtos SET quantidade = ? WHERE codigo = ?'
                 params_update = (nova_quantidade, codigo)
                 executar_query(query_update_produto, params_update)
 
-                # 2. Insert record into MOVIMENTACOES table
+                # 2. Insert MOVIMENTACOES
                 tipo_mov = 'AJUSTE_ENTRADA' if diferenca > 0 else 'AJUSTE_SAIDA'
                 quantidade_mov = abs(diferenca)
 
-                query_insert_mov = "INSERT INTO movimentacoes (produto_id, tipo, quantidade, data_movimentacao) VALUES (%s, %s, %s, %s)"
+                query_insert_mov = "INSERT INTO movimentacoes (produto_id, tipo, quantidade, data_movimentacao) VALUES (?, ?, ?, ?)"
                 params_insert = (produto['id'], tipo_mov, quantidade_mov, data_movimentacao) 
                 executar_query(query_insert_mov, params_insert)
 
@@ -284,15 +358,13 @@ def atualizar_estoque():
 @app.route('/amostragem')
 def amostragem():
     query = 'SELECT * FROM produtos'
-    produtos_pg = executar_query(query, fetch_mode='all')
+    produtos_sql = executar_query(query, fetch_mode='all')
     
-    if not produtos_pg:
+    if not produtos_sql:
         return render_template('amostra.html', amostra_produtos=None, mensagem="Estoque vazio. Adicione produtos para realizar a amostragem.")
 
-    # Converte a lista de dicionários para um DataFrame Pandas
-    df = pd.DataFrame(produtos_pg)
+    df = pd.DataFrame(produtos_sql)
     
-    # Lógica de Amostragem Estratificada (10% por Categoria)
     try:
         def sample_group(group):
             n_sample = max(1, int(len(group) * 0.10)) 
@@ -310,6 +382,12 @@ def amostragem():
     return render_template('amostra.html', amostra_produtos=amostra_produtos, mensagem=mensagem)
 
 
+# --- Execução Local ---
 if __name__ == '__main__':
-    print("Servidor Flask LOCAL rodando na porta 5000...")
+    print("=======================================================")
+    print("  ✅ SISTEMA DE ESTOQUE LOCAL (COM GRÁFICOS)!")
+    print("  Acesse no navegador: http://127.0.0.1:5000/")
+    print("  Para acesso na rede: http://IP_DO_SEU_PC:5000/")
+    print("=======================================================")
+    # host='0.0.0.0' permite que outros computadores na rede acessem
     app.run(debug=True, host='0.0.0.0', port=5000)
